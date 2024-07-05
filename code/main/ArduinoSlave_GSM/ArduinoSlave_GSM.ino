@@ -3,8 +3,8 @@
 
 #include "ImportantDetails.h"
 
-// #define RELAY_NO
-#define RELAY_NC
+#define RELAY_NO
+// #define RELAY_NC
 
 // #define Testing_Relays  // Uncomment this line for debugging
 // #define Serial_Debug  // Uncomment this line for debugging
@@ -28,11 +28,9 @@ const byte relay4 = 5;
 const byte relay5 = 6;
 const byte relay6 = 7;
 const byte relay7 = 8;
-const byte RX = 9;
-const byte TX = 10;
+// const byte RX = 12;
+// const byte TX = 11;
 const byte LightIndicator = 13;
-
-SoftwareSerial SIM900(RX, TX);
 
 bool relay1State = OFF;
 bool relay2State = OFF;
@@ -47,13 +45,32 @@ unsigned long previousMillis = 0;
 const unsigned long interval = 1000;
 
 char MasterCommand = '_';
+SoftwareSerial SIM900(9, 10);  // RX, TX pins
 
 void setup() {
+  Serial.begin(115200);
+  SIM900.begin(115200);
+  delay(1000);
+
+  Serial.println("Initializing SIM900A...");
+  SIM900.println("AT");
+  delay(1000);
+
+  if (SIM900.find("OK")) {
+    SIM900.println("AT+CMGF=1");  // Set SMS mode to text mode
+    delay(1000);
+    SIM900.println("AT+CNMI=2,2,0,0,0");  // Enable SMS text mode
+    delay(3000);
+    SIM900.println("AT+CMGD=1,4");  // delete all SMS
+    delay(3000);
+    Serial.println(F("SIM900A is ready."));
+  } else {
+    Serial.println(F("SIM900A initialization failed. Check connections and restart the board."));
+    GSMstatus = false;
+  }
+
   Wire.begin(8);
   Wire.onReceive(receiveEvent);
-
-  Serial.begin(9600);
-  SIM900.begin(9600);
 
   pinMode(relay1, OUTPUT);
   pinMode(relay2, OUTPUT);
@@ -74,86 +91,61 @@ void setup() {
   digitalWrite(relay6, OFF);
   digitalWrite(relay7, OFF);
 
-  #ifdef Testing_Relays
-    Serial.println(F("=== Relays Testing Mode ===\n"));
+#ifdef Testing_Relays
+  Serial.println(F("=== Relays Testing Mode ===\n"));
 
-    digitalWrite(relay1, ON);
-    delay(2000);
-    digitalWrite(relay2, ON);
-    delay(2000);
-    digitalWrite(relay3, ON);
-    delay(2000);
-    digitalWrite(relay4, ON);
-    delay(2000);
-    digitalWrite(relay5, ON);
-    delay(2000);
-    digitalWrite(relay6, ON);
-    delay(2000);
-    digitalWrite(relay7, ON);
-    delay(2000);
+  digitalWrite(relay1, ON);
+  delay(2000);
+  digitalWrite(relay2, ON);
+  delay(2000);
+  digitalWrite(relay3, ON);
+  delay(2000);
+  digitalWrite(relay4, ON);
+  delay(2000);
+  digitalWrite(relay5, ON);
+  delay(2000);
+  digitalWrite(relay6, ON);
+  delay(2000);
+  digitalWrite(relay7, ON);
+  delay(2000);
 
-    digitalWrite(relay1, OFF);
-    delay(2000);
-    digitalWrite(relay2, OFF);
-    delay(2000);
-    digitalWrite(relay3, OFF);
-    delay(2000);
-    digitalWrite(relay4, OFF);
-    delay(2000);
-    digitalWrite(relay5, OFF);
-    delay(2000);
-    digitalWrite(relay6, OFF);
-    delay(2000);
-    digitalWrite(relay7, OFF);
-    delay(2000);
+  digitalWrite(relay1, OFF);
+  delay(2000);
+  digitalWrite(relay2, OFF);
+  delay(2000);
+  digitalWrite(relay3, OFF);
+  delay(2000);
+  digitalWrite(relay4, OFF);
+  delay(2000);
+  digitalWrite(relay5, OFF);
+  delay(2000);
+  digitalWrite(relay6, OFF);
+  delay(2000);
+  digitalWrite(relay7, OFF);
+  delay(2000);
 
-    while (1)
-      ;
-  #endif
-
-  Serial.println("Initializing SIM900A...");
-  SIM900.println("AT");
-  delay(1000);
-
-  if (SIM900.find("OK")) {
-    SIM900.println("AT+CMGF=1");  // Set SMS mode to text mode
-    delay(2000);
-    SIM900.println("AT+CNMI=2,2,0,0,0");  // Enable SMS text mode
-    delay(2000);
-    SIM900.println("AT+CMGD=1,4");  // delete all SMS
-    delay(2000);
-    Serial.println(F("SIM900A is ready."));
-  } else {
-    Serial.println(F("SIM900A initialization failed. Check connections and restart the board."));
-    GSMstatus = false;
-  }
+  while (1)
+    ;
+#endif
 }
 
 void loop() {
-  String receivedMessage = "";
-  String getPassword = "--";
-  String getCommand = "--";
-  String getState = "--";
-  bool GSMread = false;
 
   while (SIM900.available() > 0) {
-    char c = SIM900.read();
-    GSMread = true;
-
-    if (c != '\n' and c != '\r') {
-      receivedMessage += c;
-    }
-  }
-
-  if (GSMread) {
-    receivedMessage += '\0';
-    receivedMessage.trim();
-    getPassword = WordSplitter(receivedMessage, 0);
-    getCommand = WordSplitter(receivedMessage, 1);
-    getState = WordSplitter(receivedMessage, 2);
+    String incoming = SIM900.readString();
+    String getPassword = WordSplitter(incoming, '%', 1);
+    String getCommand = WordSplitter(incoming, '%', 2);
+    String getState = WordSplitter(incoming, '%', 3);
+    
+    Serial.println("RECEIVED: " + incoming);
+    Serial.println("Password: " + getPassword);
+    Serial.println("Command: " + getCommand);
+    Serial.println("State: " + getState);
 
     if (getPassword.equals(myPasscode)) {
+      Serial.println("PASSCODE OK");
       if (getCommand.equals(myGSMCommands[0])) {
+        Serial.println("COMMAND OK");
         CheckState(1, getState);
       } else if (getCommand.equals(myGSMCommands[1])) {
         CheckState(2, getState);
@@ -189,21 +181,21 @@ void loop() {
   }
 
 
-  #ifdef Serial_Debug
-    Serial.print(F("GSM status: "));
-    Serial.println((GSMstatus) ? "Okay" : "Not Okay");
-    Serial.print(F("Relay Mode: "));
-    Serial.println(Mode);
-    Serial.println(F("Relay_Channel | State"));
-    Serial.println("     1        |   " + String(relay1State));
-    Serial.println("     2        |   " + String(relay2State));
-    Serial.println("     3        |   " + String(relay3State));
-    Serial.println("     4        |   " + String(relay4State));
-    Serial.println("     5        |   " + String(relay5State));
-    Serial.println("     6        |   " + String(relay6State));
-    Serial.println("     7        |   " + String(relay7State));
-    Serial.println(F("\n-------------------------------------\n"));
-  #endif
+#ifdef Serial_Debug
+  Serial.print(F("GSM status: "));
+  Serial.println((GSMstatus) ? "Okay" : "Not Okay");
+  Serial.print(F("Relay Mode: "));
+  Serial.println(Mode);
+  Serial.println(F("Relay_Channel | State"));
+  Serial.println("     1        |   " + String(relay1State));
+  Serial.println("     2        |   " + String(relay2State));
+  Serial.println("     3        |   " + String(relay3State));
+  Serial.println("     4        |   " + String(relay4State));
+  Serial.println("     5        |   " + String(relay5State));
+  Serial.println("     6        |   " + String(relay6State));
+  Serial.println("     7        |   " + String(relay7State));
+  Serial.println(F("\n-------------------------------------\n"));
+#endif
 
   delay(20);
 
@@ -324,9 +316,9 @@ void receiveEvent(int numBytes) {
 void AllAppliances(String state) {
   bool relayState;
 
-  if (state.equals(myGSMStateCommands[0])) {
+  if (myGSMStateCommands[0] == 1) {
     relayState = ON;
-  } else if (state.equals(myGSMStateCommands[1])) {
+  } else if (myGSMStateCommands[1] == 0)  {
     relayState = OFF;
   }
 
@@ -379,6 +371,7 @@ void CheckState(const byte relayChannel, String state) {
 
   switch (relayChannel) {
     case 1:
+      Serial.println("STATUS OK");
       relay1State = relayState;
       break;
 
@@ -418,32 +411,19 @@ void UpdateAppliancesStates() {
   digitalWrite(relay7, relay7State);
 }
 
-String WordSplitter(const String msg, const byte index) {
-  String getWord = "--";
-  byte NumOfWords = 0;
+String WordSplitter(String data, char separator, int index) {
+    int cntSeparator = 0;
+    String getData = "";
 
-  // Check numberOfWords
-  for (int i = 0; msg[i] != '\n' && msg[i] != '\0' && msg[i] != '\r'; i++) {
-    if (msg[i] == Separator) {
-      NumOfWords++;
+    for (int i = 0; i < data.length(); i++) {
+        if (data[i] == separator) {
+            cntSeparator++;
+        } else if (cntSeparator == index) {
+            getData += data[i];
+        }
     }
-  }
 
-  if (NumOfWords > 3) {
-    return "--";
-  }
-
-  for (int i = 0, wordIndex = 0; wordIndex < NumOfWords && msg[i] != '\n' && msg[i] != '\0' && msg[i] != '\r'; i++) {
-    if (msg[i] != Separator) {
-      if (wordIndex == index) {
-        getWord += msg[i];
-      }
-    } else {
-      wordIndex++;
-    }
-  }
-
-  return getWord;
+    return getData;
 }
 
 String Message() {
